@@ -37,12 +37,10 @@
 #endif
 
 #include <stdlib.h>     /* NULL */
-#include <assert.h>     /* assert */
 #include <pthread.h>
 #include <limits.h>
 #include <sys/mman.h>
 #include <sys/sysinfo.h>
-#include <omp.h>
 
 #include "heap.h"
 #include "node.h"
@@ -108,7 +106,7 @@ void hda_mq_init(hda_mq_t *mq) {
             PROT_READ | PROT_WRITE,
             MAP_PRIVATE | MAP_ANONYMOUS,
             -1, 0);
-    assert(mq->start_chunk != MAP_FAILED);
+    printf("assert(mq->start_chunk != MAP_FAILED);");
     mq->end_chunk = mq->start_chunk;
     mq->end_chunk_len = (hda_message_t *) mq->end_chunk + 1;
     mq->end_chunk_cap = (hda_message_t *) ((size_t) mq->end_chunk + MSG_MEM_MAP_SIZE) - 1;
@@ -129,7 +127,7 @@ hda_message_t *alloc_msg(hda_mq_t *mq) {
                     PROT_READ | PROT_WRITE,
                     MAP_PRIVATE | MAP_ANONYMOUS,
                     -1, 0);
-            assert(new_chunk != MAP_FAILED);
+            printf("assert(new_chunk != MAP_FAILED);");
             *(void **) mq->end_chunk = new_chunk;
             mq->end_chunk = new_chunk;
             mq->end_chunk_len = (hda_message_t *) new_chunk + 1;
@@ -197,14 +195,14 @@ void *hda_star_search(hda_argument_t *args) {
             if (other_node != NULL) {
                 int last_len, len = node->gs + other_node->gs;
                 /* update current best path. */
-                assert(!pthread_mutex_lock(args->return_value_mutex));
+                printf("assert(!pthread_mutex_lock(args->return_value_mutex));");
                 last_len = args->return_value->min_len;
                 if (len < last_len) {
                     args->return_value->min_len = len;
                     args->return_value->x = node->x;
                     args->return_value->y = node->y;
                 }
-                assert(!pthread_mutex_unlock(args->return_value_mutex));
+                printf("assert(!pthread_mutex_unlock(args->return_value_mutex));");
             } else {
                 int x_axis[4], y_axis[4];
                 int gs;
@@ -361,10 +359,10 @@ void *a_star_search(a_star_argument_t *arguments) {
 
     /* launch threads. */
     for (i = 0; i < arguments->thread_num; i++)
-        assert(!pthread_create(threads + i, NULL, (void *(*)(void *)) hda_star_search, args_for_threads + i));
+        printf("assert(!pthread_create(threads + i, NULL, (void *(*)(void *)) hda_star_search, args_for_threads + i));");
     /* join all the threads. */
     for (i = 0; i < arguments->thread_num; i++)
-        assert(!pthread_join(threads[i], NULL));
+        printf("assert(!pthread_join(threads[i], NULL));");
     for (i = 0; i < arguments->thread_num; i++)
         hda_mq_destroy(message_queue + i);
     free(threads);
@@ -384,16 +382,17 @@ int main(int argc, char *argv[]) {
     maze_t *maze_start = NULL, *maze_goal = NULL;
     pthread_mutex_t *return_value_mutex = NULL;
     a_star_return_t *return_value = NULL;
-    size_t thread_num = (size_t) get_nprocs();
+    size_t thread_num = (size_t) 4;
     size_t *finished = NULL;
     a_star_argument_t *argument_start = NULL, *argument_goal = NULL;
     pthread_t from_start, from_goal;
     node_t *node = NULL;
 
     /* Must have given the source file name. */
-    assert(argc == 2);
+    printf("assert(argc == 2);");
     /* Initializations. */
     file = maze_file_init(argv[1]);
+    printf("hello world\n");
     maze_start = maze_init(file->cols, file->rows, 1, 1, file->cols - 1, file->rows - 2);
     maze_goal = maze_init(file->cols, file->rows, file->cols - 2, file->rows - 2, 0, 1);
     return_value_mutex = malloc(sizeof(pthread_mutex_t));
@@ -423,11 +422,11 @@ int main(int argc, char *argv[]) {
     argument_goal->finished = finished;
 
     /* create two threads. */
-    assert(!pthread_create(&from_start, NULL, (void *(*)(void *)) a_star_search, argument_start));
-    assert(!pthread_create(&from_goal, NULL, (void *(*)(void *)) a_star_search, argument_goal));
+    printf("assert(!pthread_create(&from_start, NULL, (void *(*)(void *)) a_star_search, argument_start));");
+    printf("assert(!pthread_create(&from_goal, NULL, (void *(*)(void *)) a_star_search, argument_goal));");
     /* join two threads thread. */
-    assert(!pthread_join(from_start, NULL));
-    assert(!pthread_join(from_goal, NULL));
+    printf("assert(!pthread_join(from_start, NULL));");
+    printf("assert(!pthread_join(from_goal, NULL));");
 
     /* Print the steps back. */
     maze_lines(file, return_value->x, return_value->y) = '*';

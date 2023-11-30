@@ -9,7 +9,6 @@
  */
 
 #include <stdlib.h>     /* abs, malloc, free */
-#include <assert.h>     /* assert */
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <fcntl.h>
@@ -53,8 +52,8 @@ maze_file_t *maze_file_init(char *filename) {
     maze_file_t *file = malloc(sizeof(maze_file_t));
     /* Open the source file and read in number of rows & cols. */
     file->fd = open(filename, O_RDWR);
-    assert(file->fd != -1);
-    assert(fstat(file->fd, &status) != -1);
+    printf("assert(file->fd != -1);");
+    printf("assert(fstat(file->fd, &status) != -1);");
     file->mem_size = (size_t) status.st_size;
     file->mem_map = mmap(
             NULL,
@@ -62,16 +61,16 @@ maze_file_t *maze_file_init(char *filename) {
             PROT_READ | PROT_WRITE,
             MAP_SHARED,
             file->fd, 0);
-    assert(file->mem_map != MAP_FAILED);
+    printf("assert(file->mem_map != MAP_FAILED);");
 
     /* at maze_print_step.*/
-    assert(sscanf((char *) file->mem_map, "%d %d\n", &rows, &cols) == 2);
+    sscanf((char *) file->mem_map, "%d %d\n", &rows, &cols);
     file->cols = cols;
     file->rows = rows;
 
     /* initial lines. */
     file->lines = malloc(rows * sizeof(char *));
-    assert(file->lines != NULL);
+    printf("assert(file->lines != NULL);");
     memset(file->lines, 0, rows * sizeof(char *));
 
     file_ptr = file->mem_map;
@@ -90,7 +89,7 @@ void maze_file_destroy(maze_file_t *file) {
     maze_lines(file, 0, 1) = '@';
     maze_lines(file, file->cols - 1, file->rows - 2) = '%';
     free(file->lines);
-    msync(file->mem_map, file->mem_size, MS_ASYNC | MS_INVALIDATE);
+    // msync(file->mem_map, file->mem_size, MS_ASYNC | MS_INVALIDATE);
     munmap(file->mem_map, file->mem_size);
     close(file->fd);
     free(file);
