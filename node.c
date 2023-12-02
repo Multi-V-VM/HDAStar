@@ -38,7 +38,6 @@ void mem_pool_init(mem_pool_t *pool) {
             PROT_READ | PROT_WRITE,
             MAP_PRIVATE | MAP_ANONYMOUS,
             -1, 0);
-    printf("assert(pool->start_chunk != MAP_FAILED);");
     pool->end_chunk = pool->start_chunk;
     pool->end_chunk_len = (node_t *) pool->end_chunk + 1;
     pool->end_chunk_cap = (node_t *) ((size_t) pool->end_chunk + NODE_MEM_MAP_SIZE) - 1;
@@ -53,7 +52,6 @@ node_t *alloc_node(mem_pool_t *mem_pool) {
                 PROT_READ | PROT_WRITE,
                 MAP_PRIVATE | MAP_ANONYMOUS,
                 -1, 0);
-        printf("assert(new_chunk != MAP_FAILED);");
         *(void **) mem_pool->end_chunk = new_chunk;
         mem_pool->end_chunk = new_chunk;
         mem_pool->end_chunk_len = (node_t *) new_chunk + 1;
