@@ -36,19 +36,21 @@
 #define _DEFAULT_SOURCE
 #endif
 
-#include <limits.h>
+#include <stdlib.h>     /* NULL */
+#include <assert.h>     /* assert */
 #include <pthread.h>
-#include <stdlib.h> /* NULL */
+#include <limits.h>
 #include <sys/mman.h>
 #include <sys/sysinfo.h>
+#include <omp.h>
 
-#include "compass.h" /* The heuristic. */
 #include "heap.h"
-#include "maze.h"
 #include "node.h"
+#include "maze.h"
+#include "compass.h"    /* The heuristic. */
 
-#define hash_distribute(num, x, y) (((x) + (y)) % num)
-#define MSG_MEM_MAP_SIZE (0X10000)
+#define hash_distribute(num, x, y)      (((x) + (y)) % num)
+#define MSG_MEM_MAP_SIZE    (0X10000)
 
 typedef struct a_star_return_t {
     int x;
@@ -75,7 +77,7 @@ typedef struct hda_message_t {
 } hda_message_t;
 
 typedef struct hda_mq_t {
-    hda_message_t *volatile head;
+    hda_message_t * volatile head;
     void *padding_1[15];
     void *start_chunk;
     void *end_chunk;
@@ -100,15 +102,16 @@ typedef struct hda_argument_t {
 
 void hda_mq_init(hda_mq_t *mq) {
     mq->head = NULL;
-    mq->start_chunk = mmap(NULL, MSG_MEM_MAP_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (mq->start_chunk == MAP_FAILED) {
-        printf("%s %d", __FILE__, __LINE__);
-        exit(-1);
-    }
+    mq->start_chunk = mmap(
+            NULL,
+            MSG_MEM_MAP_SIZE,
+            PROT_READ | PROT_WRITE,
+            MAP_SHARED,
+            -1, 0);
     mq->end_chunk = mq->start_chunk;
-    mq->end_chunk_len = (hda_message_t *)mq->end_chunk + 1;
-    mq->end_chunk_cap = (hda_message_t *)((size_t)mq->end_chunk + MSG_MEM_MAP_SIZE) - 1;
-    *(void **)mq = NULL;
+    mq->end_chunk_len = (hda_message_t *) mq->end_chunk + 1;
+    mq->end_chunk_cap = (hda_message_t *) ((size_t) mq->end_chunk + MSG_MEM_MAP_SIZE) - 1;
+    *(void **) mq = NULL;
     mq->bin = NULL;
 }
 
@@ -119,17 +122,17 @@ hda_message_t *alloc_msg(hda_mq_t *mq) {
         return tmp;
     } else {
         if (mq->end_chunk_len > mq->end_chunk_cap) {
-            void *new_chunk = mmap((void *)((size_t)mq->end_chunk + MSG_MEM_MAP_SIZE), MSG_MEM_MAP_SIZE,
-                                   PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-            if (new_chunk == MAP_FAILED) {
-                printf("%s %d", __FILE__, __LINE__);
-                exit(-1);
-            }
-            *(void **)mq->end_chunk = new_chunk;
+            void *new_chunk = mmap(
+                    (void *) ((size_t) mq->end_chunk + MSG_MEM_MAP_SIZE),
+                    MSG_MEM_MAP_SIZE,
+                    PROT_READ | PROT_WRITE,
+                    MAP_SHARED,
+                    -1, 0);
+            *(void **) mq->end_chunk = new_chunk;
             mq->end_chunk = new_chunk;
-            mq->end_chunk_len = (hda_message_t *)new_chunk + 1;
-            mq->end_chunk_cap = (hda_message_t *)((size_t)new_chunk + MSG_MEM_MAP_SIZE) - 1;
-            *(void **)new_chunk = NULL;
+            mq->end_chunk_len = (hda_message_t *) new_chunk + 1;
+            mq->end_chunk_cap = (hda_message_t *) ((size_t) new_chunk + MSG_MEM_MAP_SIZE) - 1;
+            *(void **) new_chunk = NULL;
         }
         return mq->end_chunk_len++;
     }
@@ -143,7 +146,7 @@ void free_msg(hda_mq_t *mq, hda_message_t *start_msg, hda_message_t *end_msg) {
 void hda_mq_destroy(hda_mq_t *mq) {
     void *this_pool = mq->start_chunk;
     while (this_pool != NULL) {
-        void *next_pool = *(void **)this_pool;
+        void *next_pool = *(void **) this_pool;
         munmap(this_pool, MSG_MEM_MAP_SIZE);
         this_pool = next_pool;
     }
@@ -162,7 +165,8 @@ void *hda_star_search(hda_argument_t *args) {
     mem_pool_init(&mem_pool);
     heap_init(&heap);
     /* add start. */
-    if (hash_distribute(args->thread_num, args->maze->start_x, args->maze->start_y) == args->thread_id) {
+    if (hash_distribute(args->thread_num, args->maze->start_x, args->maze->start_y) ==
+        args->thread_id) {
         /* initialize first node. */
         ++*msg_sent;
         node = node_init(alloc_node(&mem_pool), args->maze->start_x, args->maze->start_y);
@@ -191,14 +195,14 @@ void *hda_star_search(hda_argument_t *args) {
             if (other_node != NULL) {
                 int last_len, len = node->gs + other_node->gs;
                 /* update current best path. */
-                pthread_mutex_lock(args->return_value_mutex);
+                assert(!pthread_mutex_lock(args->return_value_mutex));
                 last_len = args->return_value->min_len;
                 if (len < last_len) {
                     args->return_value->min_len = len;
                     args->return_value->x = node->x;
                     args->return_value->y = node->y;
                 }
-                pthread_mutex_unlock(args->return_value_mutex);
+                assert(!pthread_mutex_unlock(args->return_value_mutex));
             } else {
                 int x_axis[4], y_axis[4];
                 int gs;
@@ -213,20 +217,6 @@ void *hda_star_search(hda_argument_t *args) {
                 y_axis[2] = node->y + 1;
                 x_axis[3] = node->x;
                 y_axis[3] = node->y - 1;
-                for (i = 0; i < 4; ++i ){
-                    if (y_axis[i]== -1){
-                        y_axis[i]=0;
-                    }
-                    if (x_axis[i]== -1){
-                        x_axis[i]=0;
-                    }
-                    if (x_axis[i] >999){
-                        x_axis[i]=999;
-                    }
-                    if (y_axis[i] >999){
-                        y_axis[i]=999;
-                    }
-                }
                 gs = node->gs + 1;
                 /* Check all the neighbours. */
                 for (i = 0; i < 4; ++i) {
@@ -248,11 +238,10 @@ void *hda_star_search(hda_argument_t *args) {
                             /* message sent add one */
                             ++*msg_sent;
                             /* send message. */
-                            do {
-                                new_msg->next = mq->head;
-                            } while (!__atomic_compare_exchange_n(&mq->head, &new_msg->next, new_msg, 1,
-                                                                  __ATOMIC_ACQUIRE, __ATOMIC_RELAXED));
-                            /*
+							do {
+								new_msg->next = mq->head;
+							} while (!__atomic_compare_exchange_n(&mq->head, &new_msg->next, new_msg, 1, __ATOMIC_ACQUIRE, __ATOMIC_RELAXED));
+							/*
                             __asm__ __volatile__(
                             "       mov         %E[ptr], %%rax;     "
                             "hda_mq_send_loop:                      "
@@ -277,22 +266,23 @@ void *hda_star_search(hda_argument_t *args) {
                     msg_received_sum += args->msg_received[i];
                 for (i = 0; i < args->thread_num; i++)
                     msg_sent_sum += args->msg_sent[i];
-                if (*args->finished || (args->return_value->min_len < INT_MAX && msg_sent_sum == msg_received_sum)) {
+                if (*args->finished ||
+                    (args->return_value->min_len < INT_MAX && msg_sent_sum == msg_received_sum)) {
                     *args->finished = 1;
                     goto hda_star_search_end;
                 }
             }
         }
         /* receive message. */
-        msg_start = __atomic_exchange_n(&msg_queue->head, NULL, __ATOMIC_ACQUIRE);
-        /*
+		msg_start = __atomic_exchange_n(&msg_queue->head, NULL, __ATOMIC_ACQUIRE);
+		/*
         msg_start = NULL;
         __asm__ __volatile__(
         "lock   xchg        %[msg], %E[ptr];    "
         :[msg] "+r"(msg_start)
         :[ptr] "r"(&msg_queue->head)
         : "memory");
-        */
+		*/
 
         msg = msg_start;
         if (msg != NULL) {
@@ -323,15 +313,14 @@ void *hda_star_search(hda_argument_t *args) {
                     ++*msg_received;
                 }
                 next_msg = msg->next;
-                if (next_msg == NULL)
-                    break;
+                if (next_msg == NULL) break;
                 msg = next_msg;
             }
             free_msg(msg_queue, msg_start, msg);
         }
     }
 
-hda_star_search_end:
+    hda_star_search_end:
     mem_pool_destroy(&mem_pool);
     heap_destroy(&heap);
     return NULL;
@@ -370,17 +359,17 @@ void *a_star_search(a_star_argument_t *arguments) {
 
     /* launch threads. */
     for (i = 0; i < arguments->thread_num; i++)
-        pthread_create(threads + i, NULL, (void *(*)(void *))hda_star_search, args_for_threads + i);
+        pthread_create(threads + i, NULL, (void *(*)(void *)) hda_star_search, args_for_threads + i);
     /* join all the threads. */
     for (i = 0; i < arguments->thread_num; i++)
         pthread_join(threads[i], NULL);
-    for (i = 0; i < arguments->thread_num; i++)
-        hda_mq_destroy(message_queue + i);
-    free(threads);
-    free(message_queue);
-    free(msg_sent);
-    free(msg_received);
-    free(args_for_threads);
+    // for (i = 0; i < arguments->thread_num; i++)
+    //     hda_mq_destroy(message_queue + i);
+    // free(threads);
+    // free(message_queue);
+    // free(msg_sent);
+    // free(msg_received);
+    // free(args_for_threads);
     return NULL;
 }
 
@@ -393,12 +382,11 @@ int main(int argc, char *argv[]) {
     maze_t *maze_start = NULL, *maze_goal = NULL;
     pthread_mutex_t *return_value_mutex = NULL;
     a_star_return_t *return_value = NULL;
-    size_t thread_num = (size_t)4;
+    size_t thread_num = (size_t)atoi(argv[2]);
     size_t *finished = NULL;
     a_star_argument_t *argument_start = NULL, *argument_goal = NULL;
     pthread_t from_start, from_goal;
     node_t *node = NULL;
-
     /* Initializations. */
     file = maze_file_init(argv[1]);
     maze_start = maze_init(file->cols, file->rows, 1, 1, file->cols - 1, file->rows - 2);
@@ -430,29 +418,29 @@ int main(int argc, char *argv[]) {
     argument_goal->finished = finished;
 
     /* create two threads. */
-    pthread_create(&from_start, NULL, (void *(*)(void *))a_star_search, argument_start);
-    pthread_create(&from_goal, NULL, (void *(*)(void *))a_star_search, argument_goal);
+    pthread_create(&from_start, NULL, (void *(*)(void *)) a_star_search, argument_start);
+    pthread_create(&from_goal, NULL, (void *(*)(void *)) a_star_search, argument_goal);
     /* join two threads thread. */
     pthread_join(from_start, NULL);
     pthread_join(from_goal, NULL);
 
     /* Print the steps back. */
     maze_lines(file, return_value->x, return_value->y) = '*';
-    for (node = maze_node(argument_start->maze, return_value->x, return_value->y)->parent; node != NULL;
-         node = node->parent)
+    for (node = maze_node(argument_start->maze, return_value->x, return_value->y)->parent;
+         node != NULL; node = node->parent)
         maze_lines(file, node->x, node->y) = '*';
-    for (node = maze_node(argument_goal->maze, return_value->x, return_value->y)->parent; node != NULL;
-         node = node->parent)
+    for (node = maze_node(argument_goal->maze, return_value->x, return_value->y)->parent;
+         node != NULL; node = node->parent)
         maze_lines(file, node->x, node->y) = '*';
 
     /* Free resources and return. */
-    maze_file_destroy(file);
-    maze_destroy(maze_start);
-    maze_destroy(maze_goal);
-    free(return_value_mutex);
-    free(return_value);
-    free(finished);
-    free(argument_start);
-    free(argument_goal);
+    // maze_file_destroy(file);
+    // maze_destroy(maze_start);
+    // maze_destroy(maze_goal);
+    // free(return_value_mutex);
+    // free(return_value);
+    // free(finished);
+    // free(argument_start);
+    // free(argument_goal);
     return 0;
 }
