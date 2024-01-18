@@ -106,8 +106,9 @@ void hda_mq_init(hda_mq_t *mq) {
             NULL,
             MSG_MEM_MAP_SIZE,
             PROT_READ | PROT_WRITE,
-            MAP_SHARED,
+            MAP_PRIVATE | MAP_ANONYMOUS,
             -1, 0);
+    assert(mq->start_chunk != -1);
     mq->end_chunk = mq->start_chunk;
     mq->end_chunk_len = (hda_message_t *) mq->end_chunk + 1;
     mq->end_chunk_cap = (hda_message_t *) ((size_t) mq->end_chunk + MSG_MEM_MAP_SIZE) - 1;
@@ -126,8 +127,9 @@ hda_message_t *alloc_msg(hda_mq_t *mq) {
                     (void *) ((size_t) mq->end_chunk + MSG_MEM_MAP_SIZE),
                     MSG_MEM_MAP_SIZE,
                     PROT_READ | PROT_WRITE,
-                    MAP_SHARED,
+                    MAP_PRIVATE | MAP_ANONYMOUS,
                     -1, 0);
+            assert(new_chunk != MAP_FAILED);
             *(void **) mq->end_chunk = new_chunk;
             mq->end_chunk = new_chunk;
             mq->end_chunk_len = (hda_message_t *) new_chunk + 1;
@@ -359,17 +361,17 @@ void *a_star_search(a_star_argument_t *arguments) {
 
     /* launch threads. */
     for (i = 0; i < arguments->thread_num; i++)
-        pthread_create(threads + i, NULL, (void *(*)(void *)) hda_star_search, args_for_threads + i);
+        assert(!pthread_create(threads + i, NULL, (void *(*)(void *)) hda_star_search, args_for_threads + i));
     /* join all the threads. */
     for (i = 0; i < arguments->thread_num; i++)
-        pthread_join(threads[i], NULL);
-    // for (i = 0; i < arguments->thread_num; i++)
-    //     hda_mq_destroy(message_queue + i);
-    // free(threads);
-    // free(message_queue);
-    // free(msg_sent);
-    // free(msg_received);
-    // free(args_for_threads);
+        assert(!pthread_join(threads[i], NULL));
+    for (i = 0; i < arguments->thread_num; i++)
+        hda_mq_destroy(message_queue + i);
+    free(threads);
+    free(message_queue);
+    free(msg_sent);
+    free(msg_received);
+    free(args_for_threads);
     return NULL;
 }
 
@@ -382,11 +384,13 @@ int main(int argc, char *argv[]) {
     maze_t *maze_start = NULL, *maze_goal = NULL;
     pthread_mutex_t *return_value_mutex = NULL;
     a_star_return_t *return_value = NULL;
-    size_t thread_num = (size_t)atoi(argv[2]);
+    size_t thread_num = (size_t) atoi(argv[2]);
     size_t *finished = NULL;
     a_star_argument_t *argument_start = NULL, *argument_goal = NULL;
     pthread_t from_start, from_goal;
     node_t *node = NULL;
+
+    /* Must have given the source file name. */
     /* Initializations. */
     file = maze_file_init(argv[1]);
     maze_start = maze_init(file->cols, file->rows, 1, 1, file->cols - 1, file->rows - 2);
@@ -418,11 +422,11 @@ int main(int argc, char *argv[]) {
     argument_goal->finished = finished;
 
     /* create two threads. */
-    pthread_create(&from_start, NULL, (void *(*)(void *)) a_star_search, argument_start);
-    pthread_create(&from_goal, NULL, (void *(*)(void *)) a_star_search, argument_goal);
+    assert(!pthread_create(&from_start, NULL, (void *(*)(void *)) a_star_search, argument_start));
+    assert(!pthread_create(&from_goal, NULL, (void *(*)(void *)) a_star_search, argument_goal));
     /* join two threads thread. */
-    pthread_join(from_start, NULL);
-    pthread_join(from_goal, NULL);
+    assert(!pthread_join(from_start, NULL));
+    assert(!pthread_join(from_goal, NULL));
 
     /* Print the steps back. */
     maze_lines(file, return_value->x, return_value->y) = '*';
@@ -434,13 +438,13 @@ int main(int argc, char *argv[]) {
         maze_lines(file, node->x, node->y) = '*';
 
     /* Free resources and return. */
-    // maze_file_destroy(file);
-    // maze_destroy(maze_start);
-    // maze_destroy(maze_goal);
-    // free(return_value_mutex);
-    // free(return_value);
-    // free(finished);
-    // free(argument_start);
-    // free(argument_goal);
+    maze_file_destroy(file);
+    maze_destroy(maze_start);
+    maze_destroy(maze_goal);
+    free(return_value_mutex);
+    free(return_value);
+    free(finished);
+    free(argument_start);
+    free(argument_goal);
     return 0;
 }
